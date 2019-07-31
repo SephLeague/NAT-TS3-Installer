@@ -14,6 +14,59 @@ if [ -e '/etc/redhat-release' ] ; then
   exit 1
 fi
 
+# Get the internal IP of the server
+pvtip=$( ifconfig  | grep 'inet addr:'| grep -v '127.0.0*' | cut -d ':' -f2 | awk '{ print $1}' )
+
+# Get the external public IP of the server
+pubip=$( wget -qO- http://ipinfo.io/ip )
+
+# Gives user the internal ip for reference and ask for desired ports
+echo "Your private internal IP is: $pvtip"
+read -p "Enter Voice Server port [9987]: " vport
+while true; do
+  if [[ "$vport" == "" ]]; then
+    vport="9987"
+    break
+  elif ! [[ "$vport" =~ ^[0-9]+$ ]] || [[ "$vport" -lt "1" ]] || [[ "$vport" -gt "65535" ]]; then
+    echo "Voice Server port invalid."
+    read -p "Re-enter Voice Server port [9987]: " vport
+  else
+    break
+  fi
+done
+
+read -p "Enter File Transfer port [30033]: " fport
+while true; do
+  if [[ "$fport" == "" ]]; then
+    fport="30033"
+    break
+  elif ! [[ "$fport" =~ ^[0-9]+$ ]] || [[ "$fport" -lt "1" ]] || [[ "$fport" -gt "65535" ]]; then
+    echo "File Transfer port invalid."
+    read -p "Re-enter File Transfer port [30033]: " fport
+  else
+    break
+  fi
+done
+
+read -p "Enter Server Query port [10011]: " qport
+while true; do
+  if [[ "$qport" == "" ]]; then
+    qport="10011"
+    break
+  elif ! [[ "$qport" =~ ^[0-9]+$ ]] || [[ "$qport" -lt "1" ]] || [[ "$qport" -gt "65535" ]]; then
+    echo "Server Query port invalid."
+    read -p "Re-enter Server Query port [10011]: " qport
+  else
+    break
+  fi
+done
+
+rapass=$( cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 8 | head -n 1 )
+read -p "Enter Server Query Admin password [$rapass]: " apass
+if [[ "$apass" == "" ]]; then
+  apass=$rapass
+fi
+
 # Get latest TS3 server version
 echo "-------------------------------------------------------"
 echo "Detecting latest TeamSpeak 3 version, please wait..."
@@ -21,9 +74,9 @@ echo "-------------------------------------------------------"
 wget 'http://dl.4players.de/ts/releases/?C=M;O=D' -q -O - | grep -i dir | grep -Eo '<a href=\".*\/\">.*\/<\/a>' | grep -Eo '[0-9\.?]+' | uniq | sort -V -r > TS3V
 while read ts3version; do
   if [[ "${ts3version}" =~ ^[3-9]+\.[0-9]+\.1[2-9]+\.?[0-9]*$ ]]; then
-    wget --spider -q http://dl.4players.de/ts/releases/${ts3version}/teamspeak3-server_linux_amd64-${ts3version}.tar.bz2
+    wget --spider -q https://files.teamspeak-services.com/releases/server/3.9.1/teamspeak3-server_linux_amd64-3.9.1.tar.bz2
   else
-    wget --spider -q http://dl.4players.de/ts/releases/${ts3version}/teamspeak3-server_linux-amd64-${ts3version}.tar.gz
+    wget --spider -q https://files.teamspeak-services.com/releases/server/3.9.1/teamspeak3-server_linux_amd64-3.9.1.tar.gz
   fi
   if [[ $? == 0 ]]; then
     break
@@ -35,25 +88,12 @@ rm -f TS3V
 if [ "$(arch)" != 'x86_64' ]; then
     wget "http://dl.4players.de/ts/releases/"$ts3version"/teamspeak3-server_linux_x86-"$ts3version".tar.bz2" -P /opt/ts3/
 else
-    wget "http://dl.4players.de/ts/releases/"$ts3version"/teamspeak3-server_linux_amd64-"$ts3version".tar.bz2" -P /opt/ts3/
+    wget "https://files.teamspeak-services.com/releases/server/3.9.1/teamspeak3-server_linux_amd64-3.9.1.tar.bz2" -P /opt/ts3/
 fi
-
-# Get the internal IP of the server
-pvtip=$( ifconfig  | grep 'inet addr:'| grep -v '127.0.0*' | cut -d ':' -f2 | awk '{ print $1}' )
-
-# Get the external public IP of the server
-pubip=$( wget -qO- http://ipinfo.io/ip )
-
-# Gives user the internal ip for reference and ask for desired ports
-echo "Your private internal IP is: $pvtip"
-read -p "Enter desired Voice Server port: " vport
-read -p "Enter desired Servery Query port: " qport
-read -p "Enter desired File Transfer port: " fport
-read -p "Enter desired Server Query Admin password: " apass
 
 # Install required packages
 apt-get update
-apt-get install sudo telnet bzip2 -y
+apt-get install -y sudo telnet bzip2
 
 # Create non-privileged user for TS3 server, and moves home directory under /etc
 adduser --disabled-login --gecos "ts3server" ts3
@@ -74,7 +114,7 @@ cat > /etc/init.d/teamspeak3 <<"EOF"
 # Required-Start:    networking
 # Required-Stop:
 # Default-Start:     2 3 4 5
-# Default-Stop:      S 0 1 6
+# Default-Stop:      0 1 6
 # Short-Description: TeamSpeak 3 Server Daemon
 # Description:       Starts/Stops/Restarts the TeamSpeak 3 Server Daemon
 ### END INIT INFO
@@ -108,7 +148,8 @@ echo ""
 clear
 echo "TeamSpeak 3 has been successfully installed!"
 echo "Voice server is available at $pubip:$vport"
-echo "Your file transfer port is: $fport"
+echo "The file transfer port is: $fport"
+echo "The server query port is: $qport"
 echo ""
 read -p "Start the server now? [y/n]: " startopt
 sleep 1
